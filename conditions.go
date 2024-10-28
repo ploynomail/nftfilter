@@ -5,13 +5,14 @@ import (
 	"github.com/google/nftables/expr"
 )
 
-func MatchDestIP(destIP string, conn *nftables.Conn) ([]expr.Any, error) {
-	aSet := GetAnAnonymousSet()
+func MatchDestIP(destIP string, conn *nftables.Conn, table *nftables.Table) ([]expr.Any, error) {
+	aSet := GetAnAnonymousSet(table, nftables.TypeIPAddr)
 	aSet.KeyType = nftables.TypeIPAddr
-	elements, err := HandleIPAndRange(destIP)
+	elements, err, interval := HandleIPAndRange(destIP)
 	if err != nil {
 		return nil, err
 	}
+	aSet.Interval = interval
 	conn.AddSet(aSet, elements)
 	return []expr.Any{
 		// 匹配ip头部的目的ip字段
@@ -31,29 +32,16 @@ func MatchDestIP(destIP string, conn *nftables.Conn) ([]expr.Any, error) {
 	}, nil
 }
 
-func MatchSourceIP(sourceIP string, conn *nftables.Conn) ([]expr.Any, error) {
-	aSet := GetAnAnonymousSet()
+func MatchSourceIP(sourceIP string, conn *nftables.Conn, table *nftables.Table) ([]expr.Any, error) {
+	aSet := GetAnAnonymousSet(table, nftables.TypeIPAddr)
 	aSet.KeyType = nftables.TypeIPAddr
-	elements, err := HandleIPAndRange(sourceIP)
+	elements, err, interval := HandleIPAndRange(sourceIP)
 	if err != nil {
 		return nil, err
 	}
+	aSet.Interval = interval
 	conn.AddSet(aSet, elements)
 	return []expr.Any{
-		// 匹配ip头部的协议字段
-		&expr.Payload{
-			OperationType:  expr.PayloadLoad,
-			Base:           expr.PayloadBaseNetworkHeader,
-			DestRegister:   1,
-			SourceRegister: 0,
-			Offset:         9,
-			Len:            1,
-		},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Data:     []byte{0x06},
-			Register: 1,
-		},
 		// 匹配ip头部的源ip字段
 		&expr.Payload{
 			OperationType:  expr.PayloadLoad,
@@ -71,16 +59,31 @@ func MatchSourceIP(sourceIP string, conn *nftables.Conn) ([]expr.Any, error) {
 	}, nil
 }
 
-func MatchDestPort(destPort string, conn *nftables.Conn) ([]expr.Any, error) {
-	aSet := GetAnAnonymousSet()
+func MatchDestPort(destPort string, conn *nftables.Conn, table *nftables.Table) ([]expr.Any, error) {
+	aSet := GetAnAnonymousSet(table, nftables.TypeInetService)
 	aSet.KeyType = nftables.TypeInetService
-	elements, err := HandlePortAndRange(destPort)
+	elements, err, interval := HandlePortAndRange(destPort)
 	if err != nil {
 		return nil, err
 	}
+	aSet.Interval = interval
 	conn.AddSet(aSet, elements)
 
 	return []expr.Any{
+		// 匹配tcp协议
+		&expr.Payload{
+			OperationType:  expr.PayloadLoad,
+			Base:           expr.PayloadBaseNetworkHeader,
+			DestRegister:   1,
+			SourceRegister: 0,
+			Offset:         9,
+			Len:            1,
+		},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Data:     []byte{0x06},
+			Register: 1,
+		},
 		// 匹配tcp头部的目的端口字段
 		&expr.Payload{
 			OperationType:  expr.PayloadLoad,
@@ -98,13 +101,14 @@ func MatchDestPort(destPort string, conn *nftables.Conn) ([]expr.Any, error) {
 	}, nil
 }
 
-func MatchSourcePort(sourcePort string, conn *nftables.Conn) ([]expr.Any, error) {
-	aSet := GetAnAnonymousSet()
+func MatchSourcePort(sourcePort string, conn *nftables.Conn, table *nftables.Table) ([]expr.Any, error) {
+	aSet := GetAnAnonymousSet(table, nftables.TypeInetService)
 	aSet.KeyType = nftables.TypeInetService
-	elements, err := HandlePortAndRange(sourcePort)
+	elements, err, interval := HandlePortAndRange(sourcePort)
 	if err != nil {
 		return nil, err
 	}
+	aSet.Interval = interval
 	conn.AddSet(aSet, elements)
 	return []expr.Any{
 		// 匹配tcp头部的源端口字段

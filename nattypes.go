@@ -1,6 +1,9 @@
 package nftfilter
 
 import (
+	"errors"
+	"net"
+
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 )
@@ -25,7 +28,7 @@ type Nat struct {
 	Source          string  `json:"source"`           // 10.0.0.2/24 or 10.0.0.2-10.0.0.4 or 10.0.0.2,10.0.0.3,10.0.0.4
 	DestPort        string  `json:"dest_port"`        // 80 or 80-90 or 80,90
 	SourcePort      string  `json:"source_port"`      // 80 or 80-90 or 80,90
-	OutputIP        string  `json:"output_ip"`        // 10.0.0.2/24 or 10.0.0.2-10.0.0.4 or 10.0.0.2,10.0.0.3,10.0.0.4
+	TargeIP         string  `json:"target_ip"`        // 10.0.0.2/24 or 10.0.0.2-10.0.0.4 or 10.0.0.2,10.0.0.3,10.0.0.4
 	OutputInterface string  `json:"output_interface"` // eth0
 }
 
@@ -97,6 +100,7 @@ func (n *Nats) GetDNatChain() *nftables.Chain {
 
 func (n *Nats) PrepareRules(conn *nftables.Conn) ([]*nftables.Rule, error) {
 	var rules []*nftables.Rule = make([]*nftables.Rule, 0)
+	table := n.GetTable()
 	for _, nat := range *n {
 		var rule *nftables.Rule = &nftables.Rule{
 			Table: n.GetTable(),
@@ -104,28 +108,28 @@ func (n *Nats) PrepareRules(conn *nftables.Conn) ([]*nftables.Rule, error) {
 		}
 
 		if nat.Dest != "" {
-			list, err := MatchDestIP(nat.Dest, conn)
+			list, err := MatchDestIP(nat.Dest, conn, table)
 			if err != nil {
 				return nil, err
 			}
 			rule.Exprs = append(rule.Exprs, list...)
 		}
 		if nat.Source != "" {
-			list, err := MatchSourceIP(nat.Source, conn)
+			list, err := MatchSourceIP(nat.Source, conn, table)
 			if err != nil {
 				return nil, err
 			}
 			rule.Exprs = append(rule.Exprs, list...)
 		}
 		if nat.DestPort != "" {
-			list, err := MatchDestPort(nat.DestPort, conn)
+			list, err := MatchDestPort(nat.DestPort, conn, table)
 			if err != nil {
 				return nil, err
 			}
 			rule.Exprs = append(rule.Exprs, list...)
 		}
 		if nat.SourcePort != "" {
-			list, err := MatchSourcePort(nat.SourcePort, conn)
+			list, err := MatchSourcePort(nat.SourcePort, conn, table)
 			if err != nil {
 				return nil, err
 			}
@@ -135,19 +139,22 @@ func (n *Nats) PrepareRules(conn *nftables.Conn) ([]*nftables.Rule, error) {
 		switch nat.NatType {
 		case SNat:
 			rule.Chain = n.GetSNatChain()
-			if nat.OutputIP != "" {
-				rule.Exprs = append(rule.Exprs, VerdirtSNatCIDR(nat.OutputIP)...)
-			}
-			if nat.OutputInterface != "" {
+			if nat.TargeIP != "" && nat.OutputInterface == "" {
+				if net.ParseIP(nat.TargeIP) == nil {
+					return nil, errors.New("output_ip is not a valid ip")
+				}
+				rule.Exprs = append(rule.Exprs, VerdirtSNatCIDR(nat.TargeIP)...)
+			} else if nat.OutputInterface != "" && nat.TargeIP == "" {
 				rule.Exprs = append(rule.Exprs, VerdirtSNatInterface(nat.OutputInterface)...)
+			} else {
+				return nil, errors.New("output_ip and output_interface must be set only one")
 			}
 		case DNat:
 			rule.Chain = n.GetDNatChain()
-			if nat.OutputIP != "" {
-				rule.Exprs = append(rule.Exprs, VerdirtDNatCIDR(nat.OutputIP)...)
-			}
-			if nat.OutputInterface != "" {
-				rule.Exprs = append(rule.Exprs, VerdirtDNatInterface(nat.OutputInterface)...)
+			if nat.TargeIP != "" && nat.OutputInterface == "" {
+				rule.Exprs = append(rule.Exprs, VerdirtDNatCIDR(nat.TargeIP)...)
+			} else {
+				return nil, errors.New("output_ip and output_interface must be set only one")
 			}
 		}
 		rules = append(rules, rule)
